@@ -41,32 +41,26 @@ spec:
       source: |
         #!/bin/sh
         set -e
-        podman system service -t 0 &
         podman info
+        mkdir -p ~/.config/containers
+        echo -e "[storage]\ndriver = \"vfs\"" > ~/.config/containers/storage.conf
+       
+        podman system service -t 0 &
         echo "Image has pulled"
+
+        podman info
         cd /workspace/simple-go-service
         podman pull gcr.io/buildpacks/builder
         podman network create my-valid-network
         echo "Networks"
         podman network ls
-        sudo modprobe fuse || exit 1
-        
-        # Ensure fuse-overlayfs is installed
-        if [ ! -x /usr/bin/fuse-overlayfs ]; then
-          echo "fuse-overlayfs could not be found"
-          exit 1
-        fi
-        
-        grep $(whoami) /etc/subuid
-        grep $(whoami) /etc/subgid
+
+        podman build -t yashodperera/test .
+      
         echo "Networks Done"
-        mkdir -p ~/.config/containers
-        echo -e "[storage]\ndriver = \"overlay\"\n[storage.options]\nmount_program = \"/usr/bin/fuse-overlayfs\"" | tee ~/.config/containers/storage.conf
-        cat ~/.config/containers/storage.conf
         pack build yashodperera/test --path . --builder gcr.io/buildpacks/builder --docker-host=inherit --network my-valid-network
         podman network ls
         podman images
-        echo "Hii"
       volumeMounts:
       - name: shared-volume
         mountPath: /workspace
