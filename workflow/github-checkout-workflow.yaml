@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: github-checkout-
+spec:
+  entrypoint: main
+  serviceAccountName: argo
+  volumes:
+  - name: shared-volume
+    persistentVolumeClaim:
+      claimName: my-pvc 
+  templates:
+  - name: main
+    steps:
+    - - name: checkout-repo
+        template: checkout-repo
+    - - name: build-image
+        template: build-image
+
+  - name: checkout-repo
+    script:
+      image: alpine/git
+      command: [sh]
+      source: |
+        #!/bin/sh
+        set -e
+        git clone https://github.com/yashodgayashan/simple-go-service.git /workspace/simple-go-service
+        ls /workspace/simple-go-service
+        echo "Repository cloned successfully."
+      volumeMounts:
+      - name: shared-volume
+        mountPath: /workspace
+
+  - name: build-image
+    metadata:
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/main: unconfined
+    script:
+      image: yashodperera/podman-custom-buildpacks-rootless:9792779cb27a1fd13f2296af4dee4878bb9bb476
+      command: [sh]
+      source: |
+        #!/bin/sh
+        set -e
+        podman system service -t 0 &
+        podman info
+        echo "Image has pulled"
+        cd /workspace/simple-go-service
+        podman pull gcr.io/buildpacks/builder
+        podman network create my-valid-network
+        echo "Networks"
+        podman network ls
+        sudo modprobe fuse || exit 1
+        
+        # Ensure fuse-overlayfs is installed
+        if [ ! -x /usr/bin/fuse-overlayfs ]; then
+          echo "fuse-overlayfs could not be found"
+          exit 1
+        fi
+        
+        grep $(whoami) /etc/subuid
+        grep $(whoami) /etc/subgid
+        echo "Networks Done"
+        mkdir -p ~/.config/containers
+        echo -e "[storage]\ndriver = \"overlay\"\n[storage.options]\nmount_program = \"/usr/bin/fuse-overlayfs\"" | tee ~/.config/containers/storage.conf
+        cat ~/.config/containers/storage.conf
+        pack build yashodperera/test --path . --builder gcr.io/buildpacks/builder --docker-host=inherit --network my-valid-network
+        podman network ls
+        podman images
+        echo "Hii"
+      volumeMounts:
+      - name: shared-volume
+        mountPath: /workspace
+      env:
+        - name: DOCKER_HOST
+          value: unix:///run/podman/podman.sock
+        - name: PACK_HOME
+          value: /workspace
